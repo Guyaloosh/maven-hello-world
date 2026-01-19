@@ -1,0 +1,140 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+  DOCKER_IMAGE_NAME: maven-hello-world
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    outputs:
+      version: ${{ steps.version.outputs.new_version }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Set up JDK 11
+      uses: actions/setup-java@v4
+      with:
+        java-version: '11'
+        distribution: 'temurin'
+        cache: maven
+    
+    - name: Get current version and bump patch
+      id: version
+      working-directory: ./myapp
+      run: |
+        # Get current version from pom.xml
+        CURRENT_VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+        echo "Current version: $CURRENT_VERSION"
+        
+        # Parse version components
+        MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
+        MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
+        PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
+        
+        # Bump patch version
+        NEW_PATCH=$((PATCH + 1))
+        NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
+        echo "New version: $NEW_VERSION"
+        
+        # Update pom.xml with new version
+        mvn versions:set -DnewVersion=$NEW_VERSION -DgenerateBackupPoms=false
+        
+        echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+    
+    - name: Compile
+      working-directory: ./myapp
+      run: mvn compile
+    
+    - name: Run tests
+      working-directory: ./myapp
+      run: mvn test
+    
+    - name: Package JAR
+      working-directory: ./myapp
+      run: mvn package -DskipTests
+    
+    - name: Upload JAR artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: myapp-${{ steps.version.outputs.new_version }}
+        path: myapp/target/myapp-${{ steps.version.outputs.new_version }}.jar
+        retention-days: 30
+
+  docker:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Download JAR artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: myapp-${{ needs.build.outputs.version }}
+        path: myapp/target/
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+    
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile
+        push: true
+        tags: |
+          ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:${{ needs.build.outputs.version }}
+          ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:latest
+        build-args: |
+          JAR_VERSION=${{ needs.build.outputs.version }}
+
+  commit-version:
+    needs: [build, docker]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Set up JDK 11
+      uses: actions/setup-java@v4
+      with:
+        java-version: '11'
+        distribution: 'temurin'
+    
+    - name: Update version in pom.xml
+      working-directory: ./myapp
+      run: |
+        mvn versions:set -DnewVersion=${{ needs.build.outputs.version }} -DgenerateBackupPoms=false
+    
+    - name: Commit version bump
+      run: |
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
+        git add myapp/pom.xml
+        git commit -m "chore: bump version to ${{ needs.build.outputs.version }} [skip ci]"
+        git push
+
