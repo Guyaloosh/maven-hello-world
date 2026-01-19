@@ -26,7 +26,7 @@ jobs:
   # Purpose: Compile code and bump version
   # ══════════════════════════════════════════════════════════════════
   build-validation:
-    name: "🔨 Build Validation"
+    name: "Build Validation"
     runs-on: ubuntu-latest
     
     # Outputs - Pass data to downstream jobs
@@ -172,7 +172,7 @@ jobs:
   # Depends on: tests (chart validation can run parallel to docker)
   # ══════════════════════════════════════════════════════════════════
   helm-validation:
-    name: "⎈ Helm Validation"
+    name: " Helm Validation"
     runs-on: ubuntu-latest
     needs: tests
     
