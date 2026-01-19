@@ -135,7 +135,7 @@ jobs:
   docker-build:
     name: "Docker Build"
     runs-on: ubuntu-latest
-    needs: tests
+    needs: [build-validation, tests]    # Need build-validation to access version output
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     
     steps:
@@ -172,9 +172,9 @@ jobs:
   # Depends on: tests (chart validation can run parallel to docker)
   # ══════════════════════════════════════════════════════════════════
   helm-validation:
-    name: " Helm Validation"
+    name: "Helm Validation"
     runs-on: ubuntu-latest
-    needs: tests
+    needs: [build-validation, tests]    # Need build-validation to access version output
     
     steps:
       - name: Checkout code
@@ -217,7 +217,7 @@ jobs:
   release:
     name: "Release"
     runs-on: ubuntu-latest
-    needs: [docker-build, helm-validation]
+    needs: [build-validation, docker-build, helm-validation]    # Need build-validation to access version output
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     
     steps:
