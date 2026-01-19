@@ -1,0 +1,70 @@
+# ════════════════════════════════════════════════════════════════════
+# ArgoCD Application
+# This tells ArgoCD how to deploy our application
+# ════════════════════════════════════════════════════════════════════
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: myapp                          # Name in ArgoCD UI
+  namespace: argocd                    # ArgoCD always lives in 'argocd' namespace
+  
+  # Finalizer ensures proper cleanup when deleting
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+
+spec:
+  # ══════════════════════════════════════════════════════════════════
+  # PROJECT - ArgoCD project (default is fine for simple setups)
+  # ══════════════════════════════════════════════════════════════════
+  project: default
+
+  # ══════════════════════════════════════════════════════════════════
+  # SOURCE - Where is the code?
+  # ══════════════════════════════════════════════════════════════════
+  source:
+    repoURL: https://github.com/Guyaloosh/maven-hello-world.git
+    targetRevision: main               # Which branch to track
+    path: helm/myapp                   # Path to Helm chart in repo
+    
+    # Helm-specific configuration
+    helm:
+      # Override values from values.yaml
+      parameters:
+        - name: image.tag
+          value: "latest"              # Can be overridden by ArgoCD Image Updater
+      
+      # Or use a values file
+      valueFiles:
+        - values.yaml
+
+  # ══════════════════════════════════════════════════════════════════
+  # DESTINATION - Where to deploy?
+  # ══════════════════════════════════════════════════════════════════
+  destination:
+    server: https://kubernetes.default.svc    # Local cluster
+    namespace: myapp                          # Target namespace
+
+  # ══════════════════════════════════════════════════════════════════
+  # SYNC POLICY - How to sync?
+  # ══════════════════════════════════════════════════════════════════
+  syncPolicy:
+    # Automated sync - ArgoCD will automatically deploy changes
+    automated:
+      prune: true                      # Delete resources that are no longer in git
+      selfHeal: true                   # Fix drift (manual changes to cluster)
+      allowEmpty: false                # Don't sync if source is empty
+    
+    # Sync options
+    syncOptions:
+      - CreateNamespace=true           # Create namespace if it doesn't exist
+      - PruneLast=true                 # Delete old resources after new ones are healthy
+      - ApplyOutOfSyncOnly=true        # Only apply resources that are out of sync
+    
+    # Retry on failure
+    retry:
+      limit: 5                         # Number of retries
+      backoff:
+        duration: 5s                   # Initial delay
+        factor: 2                      # Multiply delay by this factor
+        maxDuration: 3m                # Maximum delay
+
