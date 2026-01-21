@@ -1,147 +1,206 @@
-# A simple, minimal Maven example: hello world
+# Maven Hello World - DevOps Pipeline
 
-To create the files in this git repo we've already run `mvn archetype:generate` from http://maven.apache.org/guides/getting-started/maven-in-five-minutes.html
-    
-    mvn archetype:generate -DgroupId=com.myapp.app -DartifactId=myapp -DarchetypeArtifactId=maven-archetype-quickstart -DarchetypeVersion=1.4 -DinteractiveMode=false
+A complete CI/CD pipeline demonstrating DevOps best practices with Java, Maven, Docker, Helm, and ArgoCD.
 
-Now, to print "Hello World!", type either...
-
-    cd myapp
-    mvn compile
-    java -cp target/classes com.myapp.app.App
-
-or...
-
-    cd myapp
-    mvn package
-    java -cp target/myapp-1.0-SNAPSHOT.jar com.myapp.app.App
-
-Running `mvn clean` will get us back to only the source Java and the `pom.xml`:
-
-    murphy:myapp pdurbin$ mvn clean --quiet
-    murphy:myapp pdurbin$ ack -a -f
-    pom.xml
-    src/main/java/com/myapp/app/App.java
-    src/test/java/com/myapp/app/AppTest.java
-
-Running `mvn compile` produces a class file:
-
-    murphy:myapp pdurbin$ mvn compile --quiet
-    murphy:myapp pdurbin$ ack -a -f
-    pom.xml
-    src/main/java/com/myapp/app/App.java
-    src/test/java/com/myapp/app/AppTest.java
-    target/classes/com/myapp/app/App.class
-    murphy:myapp pdurbin$ 
-    murphy:myapp pdurbin$ java -cp target/classes com.myapp.app.App
-    Hello World!
-
-Running `mvn package` does a compile and creates the target directory, including a jar:
-
-    murphy:myapp pdurbin$ mvn clean --quiet
-    murphy:myapp pdurbin$ mvn package > /dev/null
-    murphy:myapp pdurbin$ ack -a -f
-    pom.xml
-    src/main/java/com/myapp/app/App.java
-    src/test/java/com/myapp/app/AppTest.java
-    target/classes/com/myapp/app/App.class
-    target/maven-archiver/pom.properties
-    target/myapp-1.0-SNAPSHOT.jar
-    target/surefire-reports/com.myapp.app.AppTest.txt
-    target/surefire-reports/TEST-com.myapp.app.AppTest.xml
-    target/test-classes/com/myapp/app/AppTest.class
-    murphy:myapp pdurbin$ 
-    murphy:myapp pdurbin$ java -cp target/myapp-1.0-SNAPSHOT.jar com.myapp.app.App
-    Hello World!
-
-Running `mvn clean compile exec:java` requires https://www.mojohaus.org/exec-maven-plugin/
-
-Running `java -jar target/myapp-1.0-SNAPSHOT.jar` requires http://maven.apache.org/plugins/maven-shade-plugin/
-
-# Runnable Jar:
-JAR Plugin
-The Maven’s jar plugin will create jar file and we need to define the main class that will get executed when we run the jar file.
-```
-<plugin>
-  <artifactId>maven-jar-plugin</artifactId>
-  <version>3.0.2</version>
-  <configuration>
-    <archive>
-      <manifest>
-        <addClasspath>true</addClasspath>
-        <mainClass>com.myapp.App</mainClass>
-      </manifest>
-    </archive>
-  </configuration>
-</plugin>
-```
-
-
-# Folder tree before package:
-```
-├── pom.xml
-└── src
-    ├── main
-    │   └── java
-    │       └── com
-    │           └── myapp
-    │               └── app
-    │                   └── App.java
-    └── test
-        └── java
-            └── com
-                └── myapp
-                    └── app
-                        └── AppTest.java
+## Architecture Overview
 
 ```
-# Folder tree after package:
+┌──────────────┐     ┌─────────────────┐     ┌────────────┐     ┌──────────────┐
+│   GitHub     │────▶│ GitHub Actions  │────▶│ Docker Hub │────▶│  Kubernetes  │
+│  (Source)    │     │   (CI/CD)       │     │  (Registry)│     │  (ArgoCD)    │
+└──────────────┘     └─────────────────┘     └────────────┘     └──────────────┘
 ```
 
-.
-├── pom.xml
-├── src
-│   ├── main
-│   │   └── java
-│   │       └── com
-│   │           └── myapp
-│   │               └── app
-│   │                   └── App.java
-│   └── test
-│       └── java
-│           └── com
-│               └── myapp
-│                   └── app
-│                       └── AppTest.java
-└── target
-    ├── classes
-    │   └── com
-    │       └── myapp
-    │           └── app
-    │               └── App.class
-    ├── generated-sources
-    │   └── annotations
-    ├── generated-test-sources
-    │   └── test-annotations
-    ├── maven-archiver
-    │   └── pom.properties
-    ├── maven-status
-    │   └── maven-compiler-plugin
-    │       ├── compile
-    │       │   └── default-compile
-    │       │       ├── createdFiles.lst
-    │       │       └── inputFiles.lst
-    │       └── testCompile
-    │           └── default-testCompile
-    │               ├── createdFiles.lst
-    │               └── inputFiles.lst
-    ├── myapp-1.0-SNAPSHOT.jar
-    ├── surefire-reports
-    │   ├── com.myapp.app.AppTest.txt
-    │   └── TEST-com.myapp.app.AppTest.xml
-    └── test-classes
-        └── com
-            └── myapp
-                └── app
-                    └── AppTest.class
+## Project Structure
+
 ```
+maven-hello-world/
+├── .github/workflows/
+│   └── ci-cd.yml           # GitHub Actions pipeline
+├── argocd/
+│   └── application.yaml    # ArgoCD application manifest
+├── helm/myapp/
+│   ├── Chart.yaml          # Helm chart metadata
+│   ├── values.yaml         # Default configuration
+│   └── templates/          # Kubernetes manifests
+├── myapp/
+│   ├── pom.xml             # Maven configuration
+│   └── src/                # Java source code
+└── Dockerfile              # Container image definition
+```
+
+## Pipeline Jobs
+
+| Job | Description |
+|-----|-------------|
+| Build Validation | Compile code, bump version |
+| Tests | Run unit tests |
+| Docker Build | Build and push image to Docker Hub |
+| Helm Validation | Lint and validate Helm chart |
+| Release | Create GitHub Release with notes |
+
+## Setup
+
+### Prerequisites
+
+- Java 11+
+- Maven 3.x
+- Docker
+- Kubernetes cluster (Minikube)
+- ArgoCD installed on cluster
+
+### 1. Clone and Configure
+
+```bash
+git clone https://github.com/Guyaloosh/maven-hello-world.git
+cd maven-hello-world
+```
+
+### 2. GitHub Secrets
+
+Add these secrets in GitHub → Settings → Secrets → Actions:
+
+| Secret | Value |
+|--------|-------|
+| `DOCKER_USERNAME` | Your Docker Hub username |
+| `DOCKER_PASSWORD` | Docker Hub access token |
+
+### 3. Local Build
+
+```bash
+cd myapp
+mvn clean package
+java -jar target/myapp-*.jar
+```
+
+### 4. Docker Build (Local)
+
+```bash
+docker build -t guyaloosh/maven-hello-world:latest .
+docker push guyaloosh/maven-hello-world:latest
+```
+
+### 5. Deploy with ArgoCD
+
+```bash
+# Create namespace
+kubectl create namespace myapp
+
+# Apply ArgoCD application
+kubectl apply -f argocd/application.yaml
+
+# Check status
+kubectl get application myapp -n argocd
+kubectl get pods -n myapp
+```
+
+### 6. View Application Logs
+
+```bash
+kubectl logs -n myapp -l app.kubernetes.io/name=myapp
+```
+
+## CI/CD Workflow
+
+### Trigger
+- Push to `main` branch
+- Pull request to `main`
+
+### Pipeline Flow
+
+```
+build-validation ──▶ tests ──┬──▶ docker-build ──┬──▶ release
+                             └──▶ helm-validation─┘
+```
+
+### Version Bumping
+
+The pipeline automatically increments the patch version:
+```
+1.0.0 → 1.0.1 → 1.0.2 → ...
+```
+
+## ArgoCD Sync
+
+ArgoCD is configured with:
+- **Automated sync** - deploys changes automatically
+- **Self-heal** - reverts manual cluster changes
+- **Prune** - removes deleted resources
+
+### Manual Sync
+
+```bash
+# Via UI
+# Open https://localhost:8080 and click SYNC
+
+# Via CLI
+kubectl delete job myapp -n myapp
+kubectl -n argocd patch application myapp --type merge -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
+```
+
+## Useful Commands
+
+### Git
+
+```bash
+# Create feature branch
+git checkout -b feature/my-feature
+
+# Push and create PR
+git push -u origin feature/my-feature
+
+# Merge to main
+git checkout main
+git merge feature/my-feature
+git push origin main
+```
+
+### Kubernetes
+
+```bash
+# View pods
+kubectl get pods -n myapp
+
+# View logs
+kubectl logs <pod-name> -n myapp
+
+# Delete and resync
+kubectl delete job myapp -n myapp
+```
+
+### ArgoCD
+
+```bash
+# Port forward UI
+kubectl port-forward svc/argocd-server -n argocd 8080:443
+
+# Get admin password
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+
+# Check app status
+kubectl get application myapp -n argocd
+```
+
+### Docker
+
+```bash
+# Build
+docker build -t guyaloosh/maven-hello-world:latest .
+
+# Push
+docker push guyaloosh/maven-hello-world:latest
+
+# Run locally
+docker run guyaloosh/maven-hello-world:latest
+```
+
+## Security
+
+- Container runs as non-root user (UID 1001)
+- Read-only root filesystem
+- Minimal base image
+- No privilege escalation
+
+## Author
+
+Guy Aloosh
