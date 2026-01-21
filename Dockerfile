@@ -5,12 +5,12 @@ COPY myapp/pom.xml .
 COPY myapp/src ./src
 RUN mvn clean package -DskipTests
 
-# Runtime stage
-FROM eclipse-temurin:11-jre-alpine
+# Runtime stage (supports both amd64 and arm64)
+FROM eclipse-temurin:11-jre
 
 # Create non-root user for security
-RUN addgroup -g 1001 appgroup && \
-    adduser -u 1001 -G appgroup -D appuser
+RUN groupadd -g 1001 appgroup && \
+    useradd -u 1001 -g appgroup -m appuser
 
 WORKDIR /app
 
