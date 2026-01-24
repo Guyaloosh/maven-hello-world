@@ -116,6 +116,10 @@ jobs:
           # Update pom.xml with new version
           mvn versions:set -DnewVersion=$NEW_VERSION -DgenerateBackupPoms=false
 
+          # Update Chart.yaml appVersion to match
+          sed -i "s/^appVersion:.*/appVersion: \"$NEW_VERSION\"/" ../helm/myapp/Chart.yaml
+          echo "Updated Chart.yaml appVersion to: $NEW_VERSION"
+
           # Set output for later steps
           echo "VERSION=$NEW_VERSION" >> $GITHUB_OUTPUT
 
@@ -135,6 +139,7 @@ jobs:
         if: github.ref == 'refs/heads/main'
         run: |
           git add myapp/pom.xml
+          git add helm/myapp/Chart.yaml
           git commit -m "chore: bump version to ${{ steps.new_version.outputs.VERSION }} [skip ci]"
 
       - name: Push version update
