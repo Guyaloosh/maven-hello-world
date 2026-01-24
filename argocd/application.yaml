@@ -43,6 +43,7 @@ spec:
       - CreateNamespace=true           # Create namespace if it doesn't exist
       - PruneLast=true                 # Delete old resources after new ones are healthy
       - ApplyOutOfSyncOnly=true        # Only apply resources that are out of sync
+      - Replace=true                   # Replace immutable resources (like Jobs) instead of patching
     
     # Retry on failure
     retry:
