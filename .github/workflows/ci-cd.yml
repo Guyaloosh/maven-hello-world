@@ -8,7 +8,7 @@ on:
 
 env:
   DOCKER_IMAGE_NAME: maven-hello-world
-  JAVA_VERSION: '17'
+  JAVA_VERSION: '11'
 
 jobs:
 
