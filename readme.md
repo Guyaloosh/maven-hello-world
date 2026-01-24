@@ -31,13 +31,60 @@ maven-hello-world/
 
 ## Pipeline Jobs
 
-| Job | Description |
-|-----|-------------|
-| Build Validation | Compile code, bump version |
-| Tests | Run unit tests |
-| Docker Build | Build and push image to Docker Hub |
-| Helm Validation | Lint and validate Helm chart |
-| Release | Create GitHub Release with notes |
+| Job | Description | Runs On |
+|-----|-------------|---------|
+| Test | Run unit tests **first** | main, develop |
+| Build | Bump version, compile & package | main, develop |
+| Docker Build | Build and push image to Docker Hub | main only |
+| Helm Validation | Lint and validate Helm chart | main, develop |
+| Release | Create GitHub Release with notes | main only |
+
+## CI/CD Workflow
+
+### Trigger
+
+- Push to `main` branch → Full pipeline (including Docker & Release)
+- Push to `develop` branch → Test, Build, Helm Validation only
+- Pull request to `main` → Test, Build, Helm Validation only
+
+### Pipeline Flow
+
+```
+test ──▶ build ──┬──▶ docker-build ──┬──▶ release
+                 │                   │
+                 └──▶ helm-validation┘
+```
+
+**Note:** `docker-build` and `helm-validation` run in parallel after `build` completes.
+
+### Version Bumping
+
+The pipeline automatically increments the patch version on `main` branch:
+```
+1.0.0 → 1.0.1 → 1.0.2 → ...
+```
+
+## Git Flow
+
+This project uses a simplified Git Flow:
+
+```
+main ◄────────── develop ◄────────── feature/hotfix branches
+  │                 │
+  │ (production)    │ (integration)
+  │                 │
+  ▼                 ▼
+Docker + Release    Test + Build only
+```
+
+### Branches
+
+| Branch | Purpose | CI Jobs |
+|--------|---------|---------|
+| `main` | Production releases | All jobs (Test → Build → Docker → Helm → Release) |
+| `develop` | Integration branch | Test → Build → Helm Validation |
+| `feature/*` | New features | PR to main triggers validation |
+| `hotfix/*` | Urgent fixes | Merge to develop → main |
 
 ## Setup
 
@@ -100,26 +147,6 @@ kubectl get pods -n myapp
 kubectl logs -n myapp -l app.kubernetes.io/name=myapp
 ```
 
-## CI/CD Workflow
-
-### Trigger
-- Push to `main` branch
-- Pull request to `main`
-
-### Pipeline Flow
-
-```
-build-validation ──▶ tests ──┬──▶ docker-build ──┬──▶ release
-                             └──▶ helm-validation─┘
-```
-
-### Version Bumping
-
-The pipeline automatically increments the patch version:
-```
-1.0.0 → 1.0.1 → 1.0.2 → ...
-```
-
 ## ArgoCD Sync
 
 ArgoCD is configured with:
@@ -143,16 +170,29 @@ kubectl -n argocd patch application myapp --type merge -p '{"metadata":{"annotat
 ### Git
 
 ```bash
-# Create feature branch
+# Create feature branch from develop
+git checkout develop
 git checkout -b feature/my-feature
 
 # Push and create PR
 git push -u origin feature/my-feature
 
-# Merge to main
-git checkout main
+# Merge feature to develop
+git checkout develop
 git merge feature/my-feature
+git push origin develop
+
+# Merge develop to main (triggers full CI/CD)
+git checkout main
+git merge develop
 git push origin main
+
+# Hotfix workflow
+git checkout develop
+git checkout -b hotfix/urgent-fix
+# ... make fixes ...
+git push -u origin hotfix/urgent-fix
+# Merge to develop, then to main
 ```
 
 ### Kubernetes
