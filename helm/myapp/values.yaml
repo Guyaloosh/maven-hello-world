@@ -4,6 +4,7 @@ replicaCount: 1
 image:
   repository: guyaloosh/maven-hello-world
   pullPolicy: IfNotPresent
+  tag: ""
 
 nameOverride: ""
 fullnameOverride: ""
