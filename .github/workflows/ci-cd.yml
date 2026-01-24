@@ -24,7 +24,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: ☕ Setup JDK ${{ env.JAVA_VERSION }}
+      - name: Setup JDK ${{ env.JAVA_VERSION }}
         uses: actions/setup-java@v4
         with:
           java-version: ${{ env.JAVA_VERSION }}
@@ -68,7 +68,7 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: ☕ Setup JDK ${{ env.JAVA_VERSION }}
+      - name: Setup JDK ${{ env.JAVA_VERSION }}
         uses: actions/setup-java@v4
         with:
           java-version: ${{ env.JAVA_VERSION }}
@@ -225,7 +225,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: ⎈ Setup Helm
+      - name: Setup Helm
         uses: azure/setup-helm@v3
         with:
           version: 'latest'
@@ -275,14 +275,14 @@ jobs:
           # Get the last tag (if exists)
           LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
 
-          echo "## 🚀 Release v${VERSION}" > RELEASE_NOTES.md
+          echo "##  Release v${VERSION}" > RELEASE_NOTES.md
           echo "" >> RELEASE_NOTES.md
-          echo "### 🐳 Docker Image" >> RELEASE_NOTES.md
+          echo "### Docker Image" >> RELEASE_NOTES.md
           echo "\`\`\`" >> RELEASE_NOTES.md
           echo "docker pull ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:${VERSION}" >> RELEASE_NOTES.md
           echo "\`\`\`" >> RELEASE_NOTES.md
           echo "" >> RELEASE_NOTES.md
-          echo "### 📝 Changes" >> RELEASE_NOTES.md
+          echo "###  Changes" >> RELEASE_NOTES.md
 
           if [ -n "$LAST_TAG" ]; then
             git log ${LAST_TAG}..HEAD --pretty=format:"- %s (%h)" >> RELEASE_NOTES.md
@@ -292,7 +292,7 @@ jobs:
 
           echo "" >> RELEASE_NOTES.md
           echo "" >> RELEASE_NOTES.md
-          echo "### ⎈ Helm Installation" >> RELEASE_NOTES.md
+          echo "###  Helm Installation" >> RELEASE_NOTES.md
           echo "\`\`\`bash" >> RELEASE_NOTES.md
           echo "helm install myapp ./helm/myapp --set image.tag=${VERSION}" >> RELEASE_NOTES.md
           echo "\`\`\`" >> RELEASE_NOTES.md
