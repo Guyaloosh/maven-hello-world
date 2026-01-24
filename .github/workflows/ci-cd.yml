@@ -2,149 +2,203 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ main ]
+    branches: [main, develop]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 env:
   DOCKER_IMAGE_NAME: maven-hello-world
-  JAVA_VERSION: '11'
+  JAVA_VERSION: '17'
 
 jobs:
 
   # ══════════════════════════════════════════════════════════════════
-  # JOB 1: BUILD VALIDATION
-  # Purpose: Compile code and bump version
+  # JOB 1: TESTS
+  # Purpose: Run tests FIRST before any changes
   # ══════════════════════════════════════════════════════════════════
-  build-validation:
-    name: "Build Validation"
+  test:
+    name: "Test"
     runs-on: ubuntu-latest
-    
-    # Outputs - Pass data to downstream jobs
-    outputs:
-      version: ${{ steps.version.outputs.new_version }}
-    
-    steps:
-      # Download source code from GitHub to the runner
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      # Install Java Development Kit (required for Maven)
-      - name: ☕ Setup JDK ${{ env.JAVA_VERSION }}
-        uses: actions/setup-java@v4
-        with:
-          java-version: ${{ env.JAVA_VERSION }}
-          distribution: 'temurin'
-          cache: maven
-      
-      # Automatically increment patch version (1.0.1 → 1.0.2)
-      - name: Bump version
-        id: version
-        working-directory: ./myapp
-        run: |
-          # Get current version from pom.xml
-          CURRENT_VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
-          echo "Current version: $CURRENT_VERSION"
-          
-          # Parse version into components: 1.0.1 → MAJOR=1, MINOR=0, PATCH=1
-          MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
-          MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
-          PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
-          
-          # Increment patch version
-          NEW_PATCH=$((PATCH + 1))
-          NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
-          echo "New version: $NEW_VERSION"
-          
-          # Update pom.xml with new version
-          mvn versions:set -DnewVersion=$NEW_VERSION -DgenerateBackupPoms=false
-          
-          # Save version as output for other jobs
-          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
-      
-      # Compile source code (validates syntax and dependencies)
-      - name: Compile
-        working-directory: ./myapp
-        run: mvn compile
-      
-      # Save compiled classes for downstream jobs
-      - name: Upload compiled classes
-        uses: actions/upload-artifact@v4
-        with:
-          name: compiled-classes
-          path: myapp/target/classes/
-          retention-days: 1
 
-  # ══════════════════════════════════════════════════════════════════
-  # JOB 2: TESTS
-  # Purpose: Run unit tests to ensure code quality
-  # Depends on: build-validation (needs compiled code)
-  # ══════════════════════════════════════════════════════════════════
-  tests:
-    name: "Tests"
-    runs-on: ubuntu-latest
-    needs: build-validation          # Waits for build-validation to complete
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: ☕ Setup JDK ${{ env.JAVA_VERSION }}
         uses: actions/setup-java@v4
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: 'temurin'
-          cache: maven
-      
-      # Download compiled classes from previous job
-      - name: Download compiled classes
-        uses: actions/download-artifact@v4
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v4
         with:
-          name: compiled-classes
-          path: myapp/target/classes/
-      
-      # Run all unit tests
-      - name: Run unit tests
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+
+      - name: Run tests
         working-directory: ./myapp
-        run: mvn test
-      
-      # Upload test results for debugging if tests fail
+        run: mvn clean test
+
       - name: Upload test results
         uses: actions/upload-artifact@v4
-        if: always()                  # Upload even if tests fail
+        if: always()
         with:
           name: test-results
           path: myapp/target/surefire-reports/
           retention-days: 7
 
   # ══════════════════════════════════════════════════════════════════
+  # JOB 2: BUILD
+  # Purpose: Extract version, bump, commit, then compile & package
+  # Depends on: test (only build if tests pass)
+  # ══════════════════════════════════════════════════════════════════
+  build:
+    name: "Build"
+    runs-on: ubuntu-latest
+    needs: test
+    outputs:
+      version: ${{ steps.new_version.outputs.VERSION }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: ☕ Setup JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+
+      - name: Extract current version from pom.xml
+        id: version
+        working-directory: ./myapp
+        run: |
+          VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Current version: $VERSION"
+
+      - name: Update version automatically
+        if: github.ref == 'refs/heads/main'
+        id: new_version
+        working-directory: ./myapp
+        run: |
+          # Get current version
+          CURRENT_VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+          echo "Current version: $CURRENT_VERSION"
+
+          # Remove -SNAPSHOT if present
+          BASE_VERSION=${CURRENT_VERSION%-SNAPSHOT}
+
+          # Split version into parts
+          IFS='.' read -ra VERSION_PARTS <<< "$BASE_VERSION"
+          MAJOR=${VERSION_PARTS[0]}
+          MINOR=${VERSION_PARTS[1]}
+          PATCH=${VERSION_PARTS[2]}
+
+          # Increment patch version
+          NEW_PATCH=$((PATCH + 1))
+          NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
+
+          echo "New version: $NEW_VERSION"
+
+          # Update pom.xml with new version
+          mvn versions:set -DnewVersion=$NEW_VERSION -DgenerateBackupPoms=false
+
+          # Set output for later steps
+          echo "VERSION=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Set version output for non-main branches
+        if: github.ref != 'refs/heads/main'
+        id: current_version
+        run: |
+          echo "VERSION=${{ steps.version.outputs.VERSION }}" >> $GITHUB_OUTPUT
+
+      - name: Configure Git for version commit
+        if: github.ref == 'refs/heads/main'
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Commit version update to repository
+        if: github.ref == 'refs/heads/main'
+        run: |
+          git add myapp/pom.xml
+          git commit -m "chore: bump version to ${{ steps.new_version.outputs.VERSION }} [skip ci]"
+
+      - name: Push version update
+        if: github.ref == 'refs/heads/main'
+        run: |
+          git push origin main
+
+      - name: Compile and package
+        working-directory: ./myapp
+        run: mvn clean compile package -DskipTests
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: myapp-jar
+          path: myapp/target/*.jar
+          retention-days: 30
+
+  # ══════════════════════════════════════════════════════════════════
   # JOB 3: DOCKER BUILD
   # Purpose: Build Docker image and push to Docker Hub
-  # Depends on: tests (only build if tests pass)
-  # Condition: Only runs on push to main (not on PRs)
+  # Depends on: build (needs compiled JAR)
+  # Condition: Only runs on push to main
   # ══════════════════════════════════════════════════════════════════
   docker-build:
     name: "Docker Build"
     runs-on: ubuntu-latest
-    needs: [build-validation, tests]    # Need build-validation to access version output
+    needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
-      # Setup Docker Buildx for advanced build features
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: myapp-jar
+          path: myapp/target/
+
+      - name: Extract version from JAR filename
+        id: version
+        run: |
+          cd myapp/target
+          # Find the JAR file and extract version from filename
+          JAR_FILE=$(ls myapp-*.jar | head -n 1)
+          echo "Found JAR file: $JAR_FILE"
+
+          # Extract version from filename (removes 'myapp-' prefix and '.jar' suffix)
+          VERSION=$(echo "$JAR_FILE" | sed 's/myapp-\(.*\)\.jar/\1/')
+          echo "Extracted version: $VERSION"
+
+          # Set output for use in subsequent steps
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      
-      # Authenticate with Docker Hub using secrets
+
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-      
-      # Build image and push to Docker Hub with version tag
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
@@ -152,7 +206,7 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: |
-            ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:${{ needs.build-validation.outputs.version }}
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:${{ steps.version.outputs.VERSION }}
             ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -160,38 +214,34 @@ jobs:
   # ══════════════════════════════════════════════════════════════════
   # JOB 4: HELM VALIDATION
   # Purpose: Validate Helm chart is ready for deployment
-  # Depends on: tests (chart validation can run parallel to docker)
+  # Depends on: build (chart validation can run parallel to docker)
   # ══════════════════════════════════════════════════════════════════
   helm-validation:
     name: "Helm Validation"
     runs-on: ubuntu-latest
-    needs: [build-validation, tests]    # Need build-validation to access version output
-    
+    needs: build
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
-      # Install Helm CLI
+
       - name: ⎈ Setup Helm
         uses: azure/setup-helm@v3
         with:
           version: 'latest'
-      
-      # Lint - Check chart for errors and best practices
+
       - name: Helm Lint
         run: helm lint helm/myapp/
-      
-      # Template - Render chart and validate YAML syntax
+
       - name: Helm Template (dry-run)
         run: |
           helm template myapp helm/myapp/ \
-            --set image.tag=${{ needs.build-validation.outputs.version }} \
+            --set image.tag=${{ needs.build.outputs.version }} \
             > rendered-manifests.yaml
-          
+
           echo "Rendered manifests:"
           cat rendered-manifests.yaml
-      
-      # Upload rendered manifests for review
+
       - name: Upload rendered manifests
         uses: actions/upload-artifact@v4
         with:
@@ -208,69 +258,54 @@ jobs:
   release:
     name: "Release"
     runs-on: ubuntu-latest
-    needs: [build-validation, docker-build, helm-validation]    # Need build-validation to access version output
+    needs: [build, docker-build, helm-validation]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0              # Fetch all history for changelog
-      
-      # Generate changelog from commits since last tag
+          fetch-depth: 0
+
       - name: Generate Release Notes
         id: changelog
         run: |
+          VERSION=${{ needs.build.outputs.version }}
+
           # Get the last tag (if exists)
           LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          
-          echo "##  Release v${{ needs.build-validation.outputs.version }}" > RELEASE_NOTES.md
+
+          echo "## 🚀 Release v${VERSION}" > RELEASE_NOTES.md
           echo "" >> RELEASE_NOTES.md
-          echo "### Docker Image" >> RELEASE_NOTES.md
+          echo "### 🐳 Docker Image" >> RELEASE_NOTES.md
           echo "\`\`\`" >> RELEASE_NOTES.md
-          echo "docker pull ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:${{ needs.build-validation.outputs.version }}" >> RELEASE_NOTES.md
+          echo "docker pull ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:${VERSION}" >> RELEASE_NOTES.md
           echo "\`\`\`" >> RELEASE_NOTES.md
           echo "" >> RELEASE_NOTES.md
-          echo "### Changes" >> RELEASE_NOTES.md
-          
+          echo "### 📝 Changes" >> RELEASE_NOTES.md
+
           if [ -n "$LAST_TAG" ]; then
             git log ${LAST_TAG}..HEAD --pretty=format:"- %s (%h)" >> RELEASE_NOTES.md
           else
             git log --pretty=format:"- %s (%h)" -10 >> RELEASE_NOTES.md
           fi
-          
+
           echo "" >> RELEASE_NOTES.md
           echo "" >> RELEASE_NOTES.md
           echo "### ⎈ Helm Installation" >> RELEASE_NOTES.md
           echo "\`\`\`bash" >> RELEASE_NOTES.md
-          echo "helm install myapp ./helm/myapp --set image.tag=${{ needs.build-validation.outputs.version }}" >> RELEASE_NOTES.md
+          echo "helm install myapp ./helm/myapp --set image.tag=${VERSION}" >> RELEASE_NOTES.md
           echo "\`\`\`" >> RELEASE_NOTES.md
-          
+
           cat RELEASE_NOTES.md
-      
-      # Create GitHub Release with tag
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v${{ needs.build-validation.outputs.version }}
-          name: Release v${{ needs.build-validation.outputs.version }}
+          tag_name: v${{ needs.build.outputs.version }}
+          name: Release v${{ needs.build.outputs.version }}
           body_path: RELEASE_NOTES.md
           draft: false
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      
-      # Commit version bump back to repository
-      - name: Commit version bump
-        run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          
-          # Update pom.xml with new version
-          cd myapp
-          mvn versions:set -DnewVersion=${{ needs.build-validation.outputs.version }} -DgenerateBackupPoms=false
-          cd ..
-          
-          git add myapp/pom.xml
-          git commit -m "chore: bump version to ${{ needs.build-validation.outputs.version }} [skip ci]" || echo "No changes to commit"
-          git push
